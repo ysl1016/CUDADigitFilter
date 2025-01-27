@@ -6,9 +6,9 @@
 
 #define BLOCK_SIZE 16
 
-__global__ void sobelFilterKernel(const uchar *input, uchar *output, int width, int height) {
+__global__ void sobelFilterKernel(const unsigned char *input, unsigned char *output, int width, int height) {
     // Shared memory for the block
-    __shared__ uchar sharedMem[BLOCK_SIZE + 2][BLOCK_SIZE + 2];
+    __shared__ unsigned char sharedMem[BLOCK_SIZE + 2][BLOCK_SIZE + 2];
 
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
