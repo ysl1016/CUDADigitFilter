@@ -93,6 +93,7 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
     dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
                   (height + blockSize.y - 1) / blockSize.y);
 
+    // 각 이미지에 대해 필터 적용
     switch(filter_type) {
         case FilterType::SOBEL:
             sobelFilter<<<gridSize, blockSize>>>(d_input, d_output, width, height);
@@ -103,6 +104,12 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
         case FilterType::SHARPEN:
             sharpenFilter<<<gridSize, blockSize>>>(d_input, d_output, width, height);
             break;
+    }
+    
+    // CUDA 오류 체크 추가
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
     }
     
     cudaDeviceSynchronize();
