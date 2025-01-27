@@ -2,7 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#include <filesystem>
+#include <sys/stat.h>   // mkdir 사용을 위해
 
 void Logger::info(const std::string& message) {
     std::cout << "[INFO] " << message << std::endl;
@@ -28,7 +28,8 @@ double Timer::stop() {
 bool ImageUtils::saveBatch(const unsigned char* images, int num_images, 
                          int width, int height, 
                          const std::string& output_path) {
-    std::filesystem::create_directories(output_path);
+    // 디렉토리 생성 (이미 존재하는 경우 무시)
+    mkdir(output_path.c_str(), 0777);
     
     for (int i = 0; i < num_images; i++) {
         std::string filename = output_path + "/image_" + 
