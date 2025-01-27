@@ -20,6 +20,40 @@ void writeLog(const std::string& message) {
 }
 
 int main(int argc, char** argv) {
+    // MNIST 데이터 로드
+    std::vector<unsigned char> mnist_data;
+    if (!loadMNISTImages("data/train-images.idx3-ubyte", mnist_data)) {
+        std::cout << "Failed to load MNIST data" << std::endl;
+        return -1;
+    }
+
+    const int width = 28;  // MNIST 이미지 너비
+    const int height = 28; // MNIST 이미지 높이
+    const int num_images = 5; // 처리할 이미지 수
+    const size_t image_size = width * height;
+
+    // GPU 메모리 할당
+    unsigned char *d_input, *d_output;
+    cudaMalloc(&d_input, image_size * num_images * sizeof(unsigned char));
+    cudaMalloc(&d_output, image_size * num_images * sizeof(unsigned char));
+
+    // 입력 데이터를 GPU로 복사
+    cudaMemcpy(d_input, mnist_data.data(), image_size * num_images * sizeof(unsigned char), 
+               cudaMemcpyHostToDevice);
+
+    // 각 필터 적용
+    std::cout << "Applying Sobel filter..." << std::endl;
+    applySobelFilter(d_input, d_output, width, height, num_images);
+    saveFilteredImages(d_output, "output/sobel", width, height, num_images);
+
+    std::cout << "Applying Gaussian filter..." << std::endl;
+    applyGaussianFilter(d_input, d_output, width, height, num_images);
+    saveFilteredImages(d_output, "output/gaussian", width, height, num_images);
+
+    std::cout << "Applying Sharpen filter..." << std::endl;
+    applySharpenFilter(d_input, d_output, width, height, num_images);
+    saveFilteredImages(d_output, "output/sharpen", width, height, num_images);
+
     // 로그 파일 열기
     logFile.open("output.txt");
     
