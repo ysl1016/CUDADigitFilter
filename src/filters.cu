@@ -9,8 +9,8 @@ __device__ int clamp(int value, int min, int max) {
 }
 
 // CUDA 커널 구현
-__global__ void sobelFilterKernel(unsigned char* input, unsigned char* output, 
-                                int width, int height) {
+__global__ void sobelFilter(unsigned char* input, unsigned char* output, 
+                          int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -34,8 +34,8 @@ __global__ void sobelFilterKernel(unsigned char* input, unsigned char* output,
     }
 }
 
-__global__ void gaussianFilterKernel(unsigned char* input, unsigned char* output, 
-                                   int width, int height) {
+__global__ void gaussianBlur(unsigned char* input, unsigned char* output, 
+                           int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -61,8 +61,8 @@ __global__ void gaussianFilterKernel(unsigned char* input, unsigned char* output
     }
 }
 
-__global__ void sharpenFilterKernel(unsigned char* input, unsigned char* output, 
-                                  int width, int height) {
+__global__ void sharpenFilter(unsigned char* input, unsigned char* output, 
+                            int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -98,7 +98,12 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
         case FilterType::SOBEL:
             sobelFilter<<<gridSize, blockSize>>>(d_input, d_output, width, height);
             break;
-        // Add other filters as needed
+        case FilterType::GAUSSIAN:
+            gaussianBlur<<<gridSize, blockSize>>>(d_input, d_output, width, height);
+            break;
+        case FilterType::SHARPEN:
+            sharpenFilter<<<gridSize, blockSize>>>(d_input, d_output, width, height);
+            break;
     }
     
     cudaDeviceSynchronize();
