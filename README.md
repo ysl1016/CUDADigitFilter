@@ -1,4 +1,4 @@
-# MNIST Image Filter CUDA
+# MNIST Image Filter via CUDA programming
 
 This project implements parallel image filtering operations on the MNIST dataset using CUDA.
 
