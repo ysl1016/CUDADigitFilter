@@ -1,165 +1,104 @@
-#include <fstream>
-#include <iostream>  // std::cerr을 위해 추가
-#include <chrono>
-#include <ctime>
-#include <cuda_runtime.h>
+#include <iostream>
+#include <string>
 #include "mnist_loader.cuh"
 #include "filters.cuh"
+#include "utils.cuh"
 
-// 로그 파일 스트림을 전역 변수로 선언
-std::ofstream logFile;
+struct CommandLineArgs {
+    std::string input_path;
+    std::string output_path;
+    std::string filter_type;
+    int num_images = -1;  // -1 means process all images
+};
 
-// 로그 작성 함수
-void writeLog(const std::string& message) {
-    // 현재 시간 가져오기
-    auto now = std::chrono::system_clock::now();
-    std::time_t time = std::chrono::system_clock::to_time_t(now);
-    
-    // 로그 파일에 시간과 메시지 작성
-    logFile << std::ctime(&time) << message << std::endl;
+CommandLineArgs parseArgs(int argc, char** argv) {
+    CommandLineArgs args;
+    for (int i = 1; i < argc; i += 2) {
+        std::string arg = argv[i];
+        if (arg == "--input") {
+            args.input_path = argv[i + 1];
+        } else if (arg == "--output") {
+            args.output_path = argv[i + 1];
+        } else if (arg == "--filter") {
+            args.filter_type = argv[i + 1];
+        } else if (arg == "--num-images") {
+            args.num_images = std::stoi(argv[i + 1]);
+        }
+    }
+    return args;
+}
+
+FilterType stringToFilterType(const std::string& filter_name) {
+    if (filter_name == "sobel") return FilterType::SOBEL;
+    if (filter_name == "gaussian") return FilterType::GAUSSIAN;
+    if (filter_name == "sharpen") return FilterType::SHARPEN;
+    throw std::runtime_error("Unknown filter type: " + filter_name);
 }
 
 int main(int argc, char** argv) {
-    // MNIST 데이터 로드
-    std::vector<unsigned char> mnist_data;
-    if (!loadMNISTImages("data/train-images.idx3-ubyte", mnist_data)) {
-        std::cout << "Failed to load MNIST data" << std::endl;
-        return -1;
-    }
+    try {
+        CommandLineArgs args = parseArgs(argc, argv);
+        
+        // Validate arguments
+        if (args.input_path.empty() || args.output_path.empty() || args.filter_type.empty()) {
+            throw std::runtime_error("Missing required arguments");
+        }
 
-    const int width = 28;  // MNIST 이미지 너비
-    const int height = 28; // MNIST 이미지 높이
-    const int num_images = 5; // 처리할 이미지 수
-    const size_t image_size = width * height;
+        Logger::info("Loading MNIST data...");
+        MNISTLoader loader;
+        if (!loader.loadImages(args.input_path)) {
+            throw std::runtime_error("Failed to load MNIST images");
+        }
 
-    // GPU 메모리 할당
-    unsigned char *d_input, *d_output;
-    cudaMalloc(&d_input, image_size * num_images * sizeof(unsigned char));
-    cudaMalloc(&d_output, image_size * num_images * sizeof(unsigned char));
+        MNISTData data = loader.getData();
+        int num_images = (args.num_images == -1) ? data.num_images : 
+                        std::min(args.num_images, data.num_images);
 
-    // 입력 데이터를 GPU로 복사
-    cudaMemcpy(d_input, mnist_data.data(), image_size * num_images * sizeof(unsigned char), 
-               cudaMemcpyHostToDevice);
+        // GPU Memory allocation
+        unsigned char *d_input, *d_output;
+        cudaMalloc(&d_input, num_images * data.image_size * sizeof(unsigned char));
+        cudaMalloc(&d_output, num_images * data.image_size * sizeof(unsigned char));
 
-    // 각 필터 적용
-    std::cout << "Applying Sobel filter..." << std::endl;
-    applySobelFilter(d_input, d_output, width, height, num_images);
-    saveFilteredImages(d_output, "output/sobel", width, height, num_images);
+        // Copy data to GPU
+        Timer timer;
+        timer.start();
+        
+        cudaMemcpy(d_input, data.images, 
+                   num_images * data.image_size * sizeof(unsigned char), 
+                   cudaMemcpyHostToDevice);
 
-    std::cout << "Applying Gaussian filter..." << std::endl;
-    applyGaussianFilter(d_input, d_output, width, height, num_images);
-    saveFilteredImages(d_output, "output/gaussian", width, height, num_images);
+        // Apply filter
+        FilterType filter_type = stringToFilterType(args.filter_type);
+        Logger::info("Applying " + args.filter_type + " filter...");
+        
+        applyFilter(d_input, d_output, 28, 28, filter_type);
 
-    std::cout << "Applying Sharpen filter..." << std::endl;
-    applySharpenFilter(d_input, d_output, width, height, num_images);
-    saveFilteredImages(d_output, "output/sharpen", width, height, num_images);
+        // Copy results back to CPU
+        unsigned char* result = new unsigned char[num_images * data.image_size];
+        cudaMemcpy(result, d_output, 
+                   num_images * data.image_size * sizeof(unsigned char), 
+                   cudaMemcpyDeviceToHost);
 
-    // 로그 파일 열기
-    logFile.open("output.txt");
-    
-    if (!logFile.is_open()) {
-        std::cout << "Failed to open log file" << std::endl;  // cerr 대신 cout 사용
-        return -1;
-    }
+        double elapsed_time = timer.stop();
+        Logger::info("Processing completed in " + 
+                    std::to_string(elapsed_time) + " ms");
 
-    writeLog("CUDA Digit Filter Processing Started");
-    
-    // CUDA 디바이스 정보 로깅
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0);
-    writeLog("CUDA Device Information:");
-    writeLog("  Device Name: " + std::string(prop.name));
-    writeLog("  Compute Capability: " + std::to_string(prop.major) + "." + std::to_string(prop.minor));
-    writeLog("  Max Threads per Block: " + std::to_string(prop.maxThreadsPerBlock));
+        // Save results
+        Logger::info("Saving processed images...");
+        if (!ImageUtils::saveBatch(result, num_images, 28, 28, args.output_path)) {
+            throw std::runtime_error("Failed to save output images");
+        }
 
-    // MNIST 데이터 로드 시작
-    writeLog("Loading MNIST data...");
-    
-    // 타이머 시작
-    auto start = std::chrono::high_resolution_clock::now();
-    
-    // 변수 선언
-    unsigned char* d_input = nullptr;
-    unsigned char* d_output = nullptr;
-    int width = 28;  // MNIST 이미지 너비
-    int height = 28; // MNIST 이미지 높이
-    size_t size = width * height * sizeof(unsigned char);
-
-    // CUDA 메모리 할당
-    cudaMalloc((void**)&d_input, size);
-    cudaMalloc((void**)&d_output, size);
-    
-    // MNIST 데이터 로드 (mnist_loader.cuh의 함수 사용)
-    std::vector<unsigned char> mnist_data;
-    if (!loadMNISTImages("data/train-images.idx3-ubyte", mnist_data)) {
-        writeLog("Failed to load MNIST data");
+        // Clean up
         cudaFree(d_input);
         cudaFree(d_output);
-        logFile.close();
-        return -1;
+        delete[] result;
+
+        Logger::info("Processing completed successfully");
+        return 0;
+
+    } catch (const std::exception& e) {
+        Logger::error(e.what());
+        return 1;
     }
-
-    // 데이터를 GPU로 복사
-    cudaMemcpy(d_input, mnist_data.data(), size, cudaMemcpyHostToDevice);
-    
-    auto load_end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> load_time = load_end - start;
-    writeLog("MNIST data loaded in " + std::to_string(load_time.count()) + " seconds");
-
-    // 필터 적용
-    writeLog("Applying filters...");
-    
-    // 각 필터별 처리 시간 측정
-    for (int i = 0; i < 5; i++) {
-        writeLog("Processing image " + std::to_string(i+1));
-        
-        auto filter_start = std::chrono::high_resolution_clock::now();
-        
-        // Sobel 필터
-        writeLog("  Applying Sobel filter...");
-        applyFilter(d_input, d_output, width, height, FilterType::SOBEL);
-        
-        auto sobel_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> sobel_time = sobel_end - filter_start;
-        writeLog("  Sobel filter completed in " + std::to_string(sobel_time.count()) + " seconds");
-        
-        // Gaussian 필터
-        writeLog("  Applying Gaussian blur...");
-        applyFilter(d_input, d_output, width, height, FilterType::GAUSSIAN);
-        
-        auto gaussian_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> gaussian_time = gaussian_end - sobel_end;
-        writeLog("  Gaussian blur completed in " + std::to_string(gaussian_time.count()) + " seconds");
-        
-        // Sharpen 필터
-        writeLog("  Applying Sharpen filter...");
-        applyFilter(d_input, d_output, width, height, FilterType::SHARPEN);
-        
-        auto sharpen_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> sharpen_time = sharpen_end - gaussian_end;
-        writeLog("  Sharpen filter completed in " + std::to_string(sharpen_time.count()) + " seconds");
-    }
-
-    // 메모리 해제
-    writeLog("Cleaning up resources...");
-    cudaFree(d_input);
-    cudaFree(d_output);
-
-    // 총 실행 시간 계산
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> total_time = end - start;
-    writeLog("Total execution time: " + std::to_string(total_time.count()) + " seconds");
-
-    // CUDA 오류 체크
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        writeLog("CUDA Error: " + std::string(cudaGetErrorString(err)));
-    }
-
-    writeLog("Processing completed successfully");
-    
-    // 로그 파일 닫기
-    logFile.close();
-    
-    return 0;
 }
