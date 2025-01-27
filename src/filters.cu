@@ -1,5 +1,6 @@
 #include "filters.cuh"
 #include <cuda_runtime.h>
+#include <stdio.h> 
 
 __global__ void sobelFilter(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
