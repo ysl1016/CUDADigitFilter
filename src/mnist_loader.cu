@@ -1,3 +1,4 @@
+// mnist_loader.cu
 #include "mnist_loader.cuh"
 #include <fstream>
 #include <iostream>
