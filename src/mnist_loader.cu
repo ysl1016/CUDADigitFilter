@@ -54,3 +54,15 @@ bool MNISTLoader::loadImages(const std::string& image_path) {
 MNISTData MNISTLoader::getData() const {
     return data_;
 }
+
+// 메모리 할당
+err = cudaMalloc((void**)&d_input, size);
+if (err != cudaSuccess) {
+    printf("CUDA error: %s\n", cudaGetErrorString(err));
+}
+
+// 메모리 복사
+err = cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice);
+if (err != cudaSuccess) {
+    printf("CUDA error: %s\n", cudaGetErrorString(err));
+}
