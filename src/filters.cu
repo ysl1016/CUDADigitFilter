@@ -139,15 +139,8 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
         return;
     }
     
-<<<<<<< HEAD
-    // 커널 실행 동기화
     err = cudaDeviceSynchronize();
     if (err != cudaSuccess) {
         printf("CUDA synchronization error: %s\n", cudaGetErrorString(err));
     }
 }
-=======
-    // 커널 실행 후 동기화
-    cudaDeviceSynchronize();
-}
->>>>>>> e490e5156c5dbbd89893c02d2d151b4ecc0b2c26
