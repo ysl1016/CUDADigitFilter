@@ -2,58 +2,27 @@
 #include <cuda_runtime.h>
 #include <stdio.h> 
 #include <arpa/inet.h>  // For ntohl function
-#include <iostream>
 
-#define BLOCK_SIZE 16
-
-__global__ void sobelFilterKernel(const unsigned char *input, unsigned char *output, int width, int height) {
-    // Shared memory for the block
-    __shared__ unsigned char sharedMem[BLOCK_SIZE + 2][BLOCK_SIZE + 2];
-
+__global__ void sobelFilter(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    int threadX = threadIdx.x + 1; // +1 for halo
-    int threadY = threadIdx.y + 1;
-
-    // Load data into shared memory
+    
     if (x < width && y < height) {
-        sharedMem[threadY][threadX] = input[y * width + x];
+        // Skip border pixels
+        if (x == 0 || x == width-1 || y == 0 || y == height-1) {
+            output[y * width + x] = input[y * width + x];
+            return;
+        }
 
-        // Load halo pixels
-        if (threadIdx.x == 0 && x > 0)
-            sharedMem[threadY][0] = input[y * width + (x - 1)];
-        if (threadIdx.x == blockDim.x - 1 && x < width - 1)
-            sharedMem[threadY][threadX + 1] = input[y * width + (x + 1)];
-        if (threadIdx.y == 0 && y > 0)
-            sharedMem[0][threadX] = input[(y - 1) * width + x];
-        if (threadIdx.y == blockDim.y - 1 && y < height - 1)
-            sharedMem[threadY + 1][threadX] = input[(y + 1) * width + x];
+        // Sobel kernels
+        int Gx = input[(y-1)*width + (x+1)] + 2*input[y*width + (x+1)] + input[(y+1)*width + (x+1)]
+                 - input[(y-1)*width + (x-1)] - 2*input[y*width + (x-1)] - input[(y+1)*width + (x-1)];
 
-        if (threadIdx.x == 0 && threadIdx.y == 0 && x > 0 && y > 0)
-            sharedMem[0][0] = input[(y - 1) * width + (x - 1)];
-        if (threadIdx.x == blockDim.x - 1 && threadIdx.y == 0 && x < width - 1 && y > 0)
-            sharedMem[0][threadX + 1] = input[(y - 1) * width + (x + 1)];
-        if (threadIdx.x == 0 && threadIdx.y == blockDim.y - 1 && x > 0 && y < height - 1)
-            sharedMem[threadY + 1][0] = input[(y + 1) * width + (x - 1)];
-        if (threadIdx.x == blockDim.x - 1 && threadIdx.y == blockDim.y - 1 && x < width - 1 && y < height - 1)
-            sharedMem[threadY + 1][threadX + 1] = input[(y + 1) * width + (x + 1)];
-    }
-    __syncthreads();
-
-    // Apply Sobel filter
-    if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
-        int Gx =
-            -1 * sharedMem[threadY - 1][threadX - 1] + 1 * sharedMem[threadY - 1][threadX + 1] +
-            -2 * sharedMem[threadY][threadX - 1] + 2 * sharedMem[threadY][threadX + 1] +
-            -1 * sharedMem[threadY + 1][threadX - 1] + 1 * sharedMem[threadY + 1][threadX + 1];
-
-        int Gy =
-            -1 * sharedMem[threadY - 1][threadX - 1] + -2 * sharedMem[threadY - 1][threadX] + -1 * sharedMem[threadY - 1][threadX + 1] +
-             1 * sharedMem[threadY + 1][threadX - 1] +  2 * sharedMem[threadY + 1][threadX] +  1 * sharedMem[threadY + 1][threadX + 1];
-
-        int magnitude = sqrtf(Gx * Gx + Gy * Gy);
-        output[y * width + x] = min(max(magnitude, 0), 255);
+        int Gy = input[(y+1)*width + (x-1)] + 2*input[(y+1)*width + x] + input[(y+1)*width + (x+1)]
+                 - input[(y-1)*width + (x-1)] - 2*input[(y-1)*width + x] - input[(y-1)*width + (x+1)];
+                 
+        float val = sqrtf((float)(Gx*Gx + Gy*Gy));
+        output[y * width + x] = (unsigned char)(val > 255 ? 255 : val);
     }
 }
 
