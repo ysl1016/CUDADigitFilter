@@ -1,8 +1,8 @@
 #include "utils.cuh"
 #include <opencv2/opencv.hpp>
-#include <filesystem>
 #include <iostream>
 #include <iomanip>
+#include <sys/stat.h>
 
 Timer::Timer() {}
 
@@ -23,6 +23,14 @@ bool ImageUtils::saveImage(const unsigned char* data, int width, int height,
     return cv::imwrite(filename, image);
 }
 
+void ImageUtils::createDirectory(const std::string& path) {
+    #ifdef _WIN32
+        _mkdir(path.c_str());
+    #else
+        mkdir(path.c_str(), 0777);
+    #endif
+}
+
 bool ImageUtils::saveBatch(const unsigned char* data, int num_images, int width, int height, 
                          const std::string& directory) {
     createDirectory(directory);
@@ -34,10 +42,6 @@ bool ImageUtils::saveBatch(const unsigned char* data, int num_images, int width,
         success &= saveImage(data + i * width * height, width, height, filename);
     }
     return success;
-}
-
-void ImageUtils::createDirectory(const std::string& path) {
-    std::filesystem::create_directories(path);
 }
 
 void Logger::info(const std::string& message) {
