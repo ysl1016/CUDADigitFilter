@@ -7,19 +7,51 @@
 
 // 함수 정의
 void loadMNISTImages(const char* filename, unsigned char** d_input, size_t* size) {
-    // ... (파일 열기 및 데이터 읽기)
+    // MNIST 데이터 로드
+    FILE* file = fopen(filename, "rb");
+    if (!file) {
+        printf("Failed to open file: %s\n", filename);
+        return;
+    }
+
+    // 헤더 읽기
+    int magic_number;
+    fread(&magic_number, sizeof(magic_number), 1, file);
+    magic_number = ntohl(magic_number); // big-endian to little-endian
+    if (magic_number != 2051) {
+        printf("Invalid magic number: %d\n", magic_number);
+        fclose(file);
+        return;
+    }
+
+    int num_images, rows, cols;
+    fread(&num_images, sizeof(num_images), 1, file);
+    fread(&rows, sizeof(rows), 1, file);
+    fread(&cols, sizeof(cols), 1, file);
+    num_images = ntohl(num_images);
+    rows = ntohl(rows);
+    cols = ntohl(cols);
+
+    // 호스트 메모리 할당
+    size_t data_size = num_images * rows * cols;
+    unsigned char* h_input = (unsigned char*)malloc(data_size);
+    fread(h_input, sizeof(unsigned char), data_size, file);
+    fclose(file);
 
     // 메모리 할당
-    cudaError_t err = cudaMalloc((void**)d_input, *size);
+    cudaError_t err = cudaMalloc((void**)d_input, data_size);
     if (err != cudaSuccess) {
         printf("CUDA error: %s\n", cudaGetErrorString(err));
     }
 
     // 메모리 복사
-    err = cudaMemcpy(*d_input, h_input, *size, cudaMemcpyHostToDevice);
+    err = cudaMemcpy(*d_input, h_input, data_size, cudaMemcpyHostToDevice);
     if (err != cudaSuccess) {
         printf("CUDA error: %s\n", cudaGetErrorString(err));
     }
+
+    // 호스트 메모리 해제
+    free(h_input);
 }
 
 MNISTLoader::MNISTLoader() {
