@@ -44,44 +44,41 @@ int main(int argc, char** argv) {
             throw std::runtime_error("Missing required arguments");
         }
 
-        Logger::info("Loading MNIST data...");
+        // Load MNIST data
         MNISTLoader loader;
         if (!loader.loadImages(args.input_path)) {
-            throw std::runtime_error("Failed to load MNIST images");
+            throw std::runtime_error("Failed to load MNIST data");
         }
 
         MNISTData data = loader.getData();
-        int num_images = (args.num_images == -1) ? data.num_images : 
-                        std::min(args.num_images, data.num_images);
+        int num_images = (args.num_images > 0) ? 
+                        std::min(args.num_images, data.num_images) : 
+                        data.num_images;
 
-        // GPU Memory allocation
-        unsigned char *d_input, *d_output;
-        cudaMalloc(&d_input, num_images * data.image_size * sizeof(unsigned char));
-        cudaMalloc(&d_output, num_images * data.image_size * sizeof(unsigned char));
+        // Allocate GPU memory
+        unsigned char *d_input = nullptr, *d_output = nullptr;
+        size_t total_size = num_images * data.image_size * sizeof(unsigned char);
+        
+        cudaMalloc(&d_input, total_size);
+        checkCudaError("Input allocation failed");
+        
+        cudaMalloc(&d_output, total_size);
+        checkCudaError("Output allocation failed");
 
         // Copy data to GPU
-        Timer timer;
-        timer.start();
-        
-        cudaMemcpy(d_input, data.images, 
-                   num_images * data.image_size * sizeof(unsigned char), 
-                   cudaMemcpyHostToDevice);
+        cudaMemcpy(d_input, data.images, total_size, cudaMemcpyHostToDevice);
+        checkCudaError("Data copy to GPU failed");
 
         // Apply filter
         FilterType filter_type = stringToFilterType(args.filter_type);
         Logger::info("Applying " + args.filter_type + " filter...");
         
-        applyFilter(d_input, d_output, 28, 28, filter_type);
+        applyFilter(d_input, d_output, 28, 28, num_images, filter_type);
 
         // Copy results back to CPU
-        unsigned char* result = new unsigned char[num_images * data.image_size];
-        cudaMemcpy(result, d_output, 
-                   num_images * data.image_size * sizeof(unsigned char), 
-                   cudaMemcpyDeviceToHost);
-
-        double elapsed_time = timer.stop();
-        Logger::info("Processing completed in " + 
-                    std::to_string(elapsed_time) + " ms");
+        unsigned char* result = new unsigned char[total_size];
+        cudaMemcpy(result, d_output, total_size, cudaMemcpyDeviceToHost);
+        checkCudaError("Data copy from GPU failed");
 
         // Save results
         Logger::info("Saving processed images...");
