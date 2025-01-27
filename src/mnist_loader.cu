@@ -1,6 +1,26 @@
 #include "mnist_loader.cuh"
 #include <fstream>
 #include <iostream>
+// 필요한 헤더 파일 포함
+#include <cuda_runtime.h>
+#include <stdio.h>
+
+// 함수 정의
+void loadMNISTImages(const char* filename, unsigned char** d_input, size_t* size) {
+    // ... (파일 열기 및 데이터 읽기)
+
+    // 메모리 할당
+    cudaError_t err = cudaMalloc((void**)d_input, *size);
+    if (err != cudaSuccess) {
+        printf("CUDA error: %s\n", cudaGetErrorString(err));
+    }
+
+    // 메모리 복사
+    err = cudaMemcpy(*d_input, h_input, *size, cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        printf("CUDA error: %s\n", cudaGetErrorString(err));
+    }
+}
 
 MNISTLoader::MNISTLoader() {
     data_.images = nullptr;
@@ -53,16 +73,4 @@ bool MNISTLoader::loadImages(const std::string& image_path) {
 
 MNISTData MNISTLoader::getData() const {
     return data_;
-}
-
-// 메모리 할당
-err = cudaMalloc((void**)&d_input, size);
-if (err != cudaSuccess) {
-    printf("CUDA error: %s\n", cudaGetErrorString(err));
-}
-
-// 메모리 복사
-err = cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice);
-if (err != cudaSuccess) {
-    printf("CUDA error: %s\n", cudaGetErrorString(err));
 }
