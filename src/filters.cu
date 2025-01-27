@@ -1,6 +1,7 @@
 #include "filters.cuh"
 #include <cuda_runtime.h>
 #include <stdio.h> 
+#include <arpa/inet.h>  // For ntohl function
 
 __global__ void sobelFilter(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -24,7 +25,6 @@ __global__ void sobelFilter(unsigned char* input, unsigned char* output, int wid
         output[y * width + x] = (unsigned char)(val > 255 ? 255 : val);
     }
 }
-
 
 __global__ void gaussianBlur(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -94,6 +94,9 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
     dim3 gridSize((width + blockSize.x - 1) / blockSize.x,
                   (height + blockSize.y - 1) / blockSize.y);
 
+    // CUDA 장치 초기화
+    cudaDeviceReset();
+
     // 각 이미지에 대해 필터 적용
     switch(filter_type) {
         case FilterType::SOBEL:
@@ -113,5 +116,6 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
         printf("CUDA error: %s\n", cudaGetErrorString(error));
     }
     
+    // 커널 실행 후 동기화
     cudaDeviceSynchronize();
 }
