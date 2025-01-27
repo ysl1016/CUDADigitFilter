@@ -1,9 +1,10 @@
 #include <fstream>
+#include <iostream>  // std::cerr을 위해 추가
 #include <chrono>
 #include <ctime>
 #include <cuda_runtime.h>
-#include "mnist_loader.cuh"  // MNIST 로더 헤더
-#include "filters.cuh"       // 필터 헤더
+#include "mnist_loader.cuh"
+#include "filters.cuh"
 
 // 로그 파일 스트림을 전역 변수로 선언
 std::ofstream logFile;
@@ -23,7 +24,7 @@ int main(int argc, char** argv) {
     logFile.open("output.txt");
     
     if (!logFile.is_open()) {
-        std::cerr << "Failed to open log file" << std::endl;
+        std::cout << "Failed to open log file" << std::endl;  // cerr 대신 cout 사용
         return -1;
     }
 
@@ -54,14 +55,18 @@ int main(int argc, char** argv) {
     cudaMalloc((void**)&d_input, size);
     cudaMalloc((void**)&d_output, size);
     
-    // MNIST 데이터 로드
-    if (!loadMNISTData("data/train-images.idx3-ubyte", d_input, size)) {
+    // MNIST 데이터 로드 (mnist_loader.cuh의 함수 사용)
+    std::vector<unsigned char> mnist_data;
+    if (!loadMNISTImages("data/train-images.idx3-ubyte", mnist_data)) {
         writeLog("Failed to load MNIST data");
         cudaFree(d_input);
         cudaFree(d_output);
         logFile.close();
         return -1;
     }
+
+    // 데이터를 GPU로 복사
+    cudaMemcpy(d_input, mnist_data.data(), size, cudaMemcpyHostToDevice);
     
     auto load_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> load_time = load_end - start;
