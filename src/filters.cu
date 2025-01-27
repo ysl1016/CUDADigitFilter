@@ -1,92 +1,93 @@
 #include "filters.cuh"
-#include <cuda_runtime.h>
+#include <algorithm>
 
-__global__ void sobelFilter(unsigned char* input, unsigned char* output, int width, int height) {
+// 헬퍼 함수
+__device__ int clamp(int value, int min, int max) {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+}
+
+// CUDA 커널 구현
+__global__ void sobelFilterKernel(unsigned char* input, unsigned char* output, 
+                                int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (x < width && y < height) {
-        // Skip border pixels
-        if (x == 0 || x == width-1 || y == 0 || y == height-1) {
-            output[y * width + x] = 0;
-            return;
-        }
-
-        // Sobel kernels
-        int Gx = -input[(y-1)*width + (x-1)] + input[(y-1)*width + (x+1)]
+        int gx = 0, gy = 0;
+        
+        // Sobel 연산
+        if (x > 0 && x < width-1 && y > 0 && y < height-1) {
+            // X 방향 그래디언트
+            gx = -input[(y-1)*width + (x-1)] + input[(y-1)*width + (x+1)]
                  -2*input[y*width + (x-1)] + 2*input[y*width + (x+1)]
                  -input[(y+1)*width + (x-1)] + input[(y+1)*width + (x+1)];
-
-        int Gy = -input[(y-1)*width + (x-1)] - 2*input[(y-1)*width + x] - input[(y-1)*width + (x+1)]
+                 
+            // Y 방향 그래디언트
+            gy = -input[(y-1)*width + (x-1)] - 2*input[(y-1)*width + x] - input[(y-1)*width + (x+1)]
                  +input[(y+1)*width + (x-1)] + 2*input[(y+1)*width + x] + input[(y+1)*width + (x+1)];
-
-        int val = sqrt((float)(Gx*Gx + Gy*Gy));
-        output[y * width + x] = (unsigned char)min(255, val);
+        }
+        
+        int sum = clamp((int)sqrt((float)(gx*gx + gy*gy)), 0, 255);
+        output[y * width + x] = static_cast<unsigned char>(sum);
     }
 }
-// 기존 코드에 추가
 
-__global__ void gaussianBlur(unsigned char* input, unsigned char* output, 
-                           int width, int height) {
+__global__ void gaussianFilterKernel(unsigned char* input, unsigned char* output, 
+                                   int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (x < width && y < height) {
-        if (x < 2 || x >= width-2 || y < 2 || y >= height-2) {
-            output[y * width + x] = input[y * width + x];
-            return;
-        }
-
-        float gaussian[5][5] = {
-            {1, 4, 6, 4, 1},
-            {4, 16, 24, 16, 4},
-            {6, 24, 36, 24, 6},
-            {4, 16, 24, 16, 4},
-            {1, 4, 6, 4, 1}
+        float sum = 0.0f;
+        float kernel[3][3] = {
+            {1/16.0f, 2/16.0f, 1/16.0f},
+            {2/16.0f, 4/16.0f, 2/16.0f},
+            {1/16.0f, 2/16.0f, 1/16.0f}
         };
         
-        float sum = 0;
-        float weightSum = 0;
-        
-        for(int i = -2; i <= 2; i++) {
-            for(int j = -2; j <= 2; j++) {
-                float weight = gaussian[i+2][j+2];
-                sum += input[(y+i)*width + (x+j)] * weight;
-                weightSum += weight;
+        if (x > 0 && x < width-1 && y > 0 && y < height-1) {
+            for(int ky = -1; ky <= 1; ky++) {
+                for(int kx = -1; kx <= 1; kx++) {
+                    sum += input[(y+ky)*width + (x+kx)] * kernel[ky+1][kx+1];
+                }
             }
+        } else {
+            sum = input[y*width + x];
         }
         
-        output[y * width + x] = static_cast<unsigned char>(sum / weightSum);
+        output[y * width + x] = static_cast<unsigned char>(clamp((int)sum, 0, 255));
     }
 }
 
-__global__ void sharpenFilter(unsigned char* input, unsigned char* output, 
-                            int width, int height) {
+__global__ void sharpenFilterKernel(unsigned char* input, unsigned char* output, 
+                                  int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (x < width && y < height) {
-        if (x == 0 || x == width-1 || y == 0 || y == height-1) {
-            output[y * width + x] = input[y * width + x];
-            return;
-        }
-
-        int kernel[3][3] = {
+        float kernel[3][3] = {
             {0, -1, 0},
             {-1, 5, -1},
             {0, -1, 0}
         };
         
-        int sum = 0;
-        for(int i = -1; i <= 1; i++) {
-            for(int j = -1; j <= 1; j++) {
-                sum += input[(y+i)*width + (x+j)] * kernel[i+1][j+1];
+        float sum = 0;
+        if (x > 0 && x < width-1 && y > 0 && y < height-1) {
+            for(int ky = -1; ky <= 1; ky++) {
+                for(int kx = -1; kx <= 1; kx++) {
+                    sum += input[(y+ky)*width + (x+kx)] * kernel[ky+1][kx+1];
+                }
             }
+        } else {
+            sum = input[y*width + x];
         }
         
-        output[y * width + x] = static_cast<unsigned char>(std::min(255, std::max(0, sum)));
+        output[y * width + x] = static_cast<unsigned char>(clamp((int)sum, 0, 255));
     }
 }
+
 void applyFilter(unsigned char* d_input, unsigned char* d_output, 
                 int width, int height, FilterType filter_type) {
     dim3 blockSize(16, 16);
