@@ -4,8 +4,8 @@
 // 필요한 헤더 파일 포함
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include <arpa/inet.h>  // ntohl 함수 사용을 위한 헤더
 
-// 함수 정의
 void loadMNISTImages(const char* filename, unsigned char** d_input, size_t* size) {
     // MNIST 데이터 로드
     FILE* file = fopen(filename, "rb");
