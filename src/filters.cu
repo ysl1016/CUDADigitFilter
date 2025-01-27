@@ -19,15 +19,13 @@ __global__ void sobelFilter(unsigned char* input, unsigned char* output, int wid
 
         int Gy = -input[(y-1)*width + (x-1)] - 2*input[(y-1)*width + x] - input[(y-1)*width + (x+1)]
                  +input[(y+1)*width + (x-1)] + 2*input[(y+1)*width + x] + input[(y+1)*width + (x+1)];
-
-        int val = sqrt((float)(Gx*Gx + Gy*Gy));
-        output[y * width + x] = (unsigned char)min(255, val);
+                 
+        float val = sqrtf((float)(Gx*Gx + Gy*Gy));
+        output[y * width + x] = (unsigned char)(val > 255 ? 255 : val);
     }
 }
-// 기존 코드에 추가
 
-__global__ void gaussianBlur(unsigned char* input, unsigned char* output, 
-                           int width, int height) {
+__global__ void gaussianBlur(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -60,8 +58,7 @@ __global__ void gaussianBlur(unsigned char* input, unsigned char* output,
     }
 }
 
-__global__ void sharpenFilter(unsigned char* input, unsigned char* output, 
-                            int width, int height) {
+__global__ void sharpenFilter(unsigned char* input, unsigned char* output, int width, int height) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
@@ -84,9 +81,12 @@ __global__ void sharpenFilter(unsigned char* input, unsigned char* output,
             }
         }
         
-        output[y * width + x] = static_cast<unsigned char>(std::min(255, std::max(0, sum)));
+        // Using ternary operators instead of std::min/max
+        sum = sum < 0 ? 0 : (sum > 255 ? 255 : sum);
+        output[y * width + x] = static_cast<unsigned char>(sum);
     }
 }
+
 void applyFilter(unsigned char* d_input, unsigned char* d_output, 
                 int width, int height, FilterType filter_type) {
     dim3 blockSize(16, 16);
@@ -97,7 +97,12 @@ void applyFilter(unsigned char* d_input, unsigned char* d_output,
         case FilterType::SOBEL:
             sobelFilter<<<gridSize, blockSize>>>(d_input, d_output, width, height);
             break;
-        // Add other filters as needed
+        case FilterType::GAUSSIAN:
+            gaussianBlur<<<gridSize, blockSize>>>(d_input, d_output, width, height);
+            break;
+        case FilterType::SHARPEN:
+            sharpenFilter<<<gridSize, blockSize>>>(d_input, d_output, width, height);
+            break;
     }
     
     cudaDeviceSynchronize();
