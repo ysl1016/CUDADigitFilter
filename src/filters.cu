@@ -2,10 +2,7 @@
 #include <cuda_runtime.h>
 #include <stdio.h> 
 #include <arpa/inet.h>  // For ntohl function
-
-#include <cuda_runtime.h>
 #include <iostream>
-#include <stdio.h>
 
 #define BLOCK_SIZE 16
 
